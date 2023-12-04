@@ -36,8 +36,30 @@ function App() {
   let [endDate, setEndDate] = React.useState(new Date())
   let [query, setQuery] = React.useState("")
   let [results, setResults] = React.useState([])
+
   let [modResults, setModResults] = React.useState([{}])
-  
+  let [newDate, setNewDate] = React.useState(new Date())
+  let [newVal, setNewVal] = React.useState("")
+  let [index, setIndex] = React.useState(0)
+
+
+
+  const [show, setShow] = useState(false);
+  const handleClose = () => setShow(false);
+  const handleShow = (index) => {
+    setNewDate(new Date(results[index]['_time']))
+    setNewVal(results[index]['_value'])
+    setIndex(index);
+    setShow(true);
+  };
+
+  const saveChanges = () => {
+    updateResult(index, '_time', newDate.toISOString())
+    updateResult(index, '_value', newVal)
+    handleClose()
+    onModify(index)
+  }
+
   
   React.useEffect(() => {
     console.log("resultsstate", results);
@@ -76,14 +98,8 @@ function App() {
         }
       });
     };
-    
+    // THIS IS CAUSING SOME ISSUES WITH INFLUX DB BUT RETURNING THE DATA CORRECTLY
     influxQuery();
-    // return res
-    // let res =  sendQuery(token, org, bucket, url, query)
-    // console.log("returned results: ", res)
-    // console.log(res[0])
-    // console.log(res.length)
-    // res? setResults(res) : console.log("no results")
   }
 
 
@@ -106,7 +122,7 @@ function App() {
     console.log('org: ', org)
     console.log('bucket: ', bucket)
 
-    const writeApi = new InfluxDB({url, token}).getWriteApi(org, bucket, 'ns')
+    const writeApi = new InfluxDB({url, token}).getWriteApi(org, bucket, 'ms')
     // setup default tags for all writes through this API
     // writeApi.useDefaultTags({location: document.hostname})
 
@@ -116,8 +132,11 @@ function App() {
     let point = new Point(bucket)
     for (const [key, value] of Object.entries(result)) {
       console.log(`${key}: ${value}`, typeof value);
-      if (key == "_field" || key == "_measurement"){
+      if (key == "_field" || key == "_measurement" || key == "_start" || key == "_stop"){
         continue
+      }
+      else if ( key == "_time"){
+        point.timestamp(new Date(value))
       }
       else if (typeof value === 'string') {
         point.tag(key, value)
@@ -128,7 +147,8 @@ function App() {
       }
     }
     console.log("point: ", point)
-    writeApi.writePoint(point)
+    writeApi.writePoint(point) // THIS DOES NOT SEEM TO BE WORKING
+    
     writeApi
       .close()
       .then(() => {
@@ -147,16 +167,11 @@ function App() {
   }
 
   const updateResult = (index, key, value) => {
-    console.log("index: ", index)
-    console.log("key: ", key)
     console.log("value: ", value)
-    console.log("results: ", results)
-    console.log("results[index]: ", results[index])
     console.log("results[index][key]: ", results[index][key])
-    results[index][key] = value
-    console.log("results[index][key]: ", results[index][key])
-    console.log("results: ", results)
-    setResults(results)
+    const newResults = [...results];
+    newResults[index][key] = value;
+    setResults(newResults);
   }
 
 
@@ -240,8 +255,26 @@ function App() {
         <Card.Body>
         
         {/* <p>{JSON.stringify(results)}</p> */}
-        <p> {results.length} </p>
+        <p> Showing {results.length} result{results.length==1 ? '': "s"} </p>
         {results.map((item, index) => (
+          <div>
+            <InputGroup className="mb-3">
+            <InputGroup.Text style={{ width: "5em" }}><i className='bi me-1' />{index}</InputGroup.Text>
+            {Object.keys(item).map((key, _) => (
+              key !== '_start' && key !== '_stop' ? 
+              <InputGroup.Text style={{ width: "10em" }}><i className='bi me-1' />{item[key]}</InputGroup.Text>
+              : null
+            ))}
+            
+            <Button  variant="outline-secondary" id="button-addon1" onClick={() => handleShow(index)}>Modify</Button>
+
+          </InputGroup>
+          
+
+          </div>
+        ))
+        }
+        {/* {results.map((item, index) => (
           <div>
             <InputGroup className="mb-3">
             {Object.keys(item).map((key, _) => (
@@ -260,13 +293,51 @@ function App() {
 
           </div>
         ))
-        }
+        } */}
         
 
   
 
         </Card.Body>
     </Card>
+    <Modal show={show} onHide={handleClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>Editing Item {index}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          
+          <InputGroup className="mb-3">
+            <InputGroup.Text style={{ width: "10em" }}><i className='bi bi-circle-square me-1' />_value</InputGroup.Text>
+            <Form.Control
+              placeholder={newVal}
+              value={newVal}
+              onChange={(event) => setNewVal(event.target.value)}
+            />
+          </InputGroup>
+          <DatePicker
+              showTimeSelect
+              minTime={new Date(0, 0, 0, 0, 0)}
+              maxTime={new Date(0, 0, 0, 23, 30)}
+              selected={newDate}
+              onChange={newDate => setNewDate(newDate)}
+              dateFormat="MMMM d, yyyy h:mmaa"
+            />
+          
+          
+
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleClose}>
+            Close
+          </Button>
+          <Button variant="danger" onClick={handleClose}>
+            Delete
+          </Button>
+          <Button variant="primary" onClick={saveChanges}>
+            Save Changes
+          </Button>
+        </Modal.Footer>
+      </Modal>
   </div>
   
    
