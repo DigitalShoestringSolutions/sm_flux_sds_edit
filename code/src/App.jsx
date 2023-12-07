@@ -123,16 +123,18 @@ function App() {
     console.log('bucket: ', bucket)
 
     const writeApi = new InfluxDB({url, token}).getWriteApi(org, bucket, 'ms')
-    // setup default tags for all writes through this API
-    // writeApi.useDefaultTags({location: document.hostname})
 
+    // Delete items if time has changed
+    // Add headings
     let result = results[index]
-    // Go through the result and createw tags for each key, using .tag() if a String and .floatField() if a number
-    
-    let point = new Point(bucket)
+
+    let point = new Point(result['_measurement'])
+    point.stringField(result['_field'], result['_value'])
+
     for (const [key, value] of Object.entries(result)) {
       console.log(`${key}: ${value}`, typeof value);
-      if (key == "_field" || key == "_measurement" || key == "_start" || key == "_stop"){
+      
+      if (key == "_field" || key == "_measurement" || key == "_start" || key == "_stop" || key == "_value" || key == "result" || key == "table"){
         continue
       }
       else if ( key == "_time"){
@@ -141,9 +143,6 @@ function App() {
       else if (typeof value === 'string') {
         point.tag(key, value)
         console.log("string", value)
-      } else if (typeof value === 'number') {
-        point.floatField(key, value)
-        
       }
     }
     console.log("point: ", point)
@@ -158,12 +157,6 @@ function App() {
         console.error(e)
         console.log('\\nFinished ERROR')
       })
-
-
-
-
-
-
   }
 
   const updateResult = (index, key, value) => {
@@ -180,11 +173,7 @@ function App() {
       <Card className='my-2'>
       <Card.Header><h4> Database Details: </h4></Card.Header>
       <Card.Body>
-
-
         <Form noValidate validated={true}>
-
-    
           <InputGroup className="mb-3">
             <InputGroup.Text style={{ width: "10em" }}><i className='bi bi-circle-square me-1' />Token</InputGroup.Text>
             <Form.Control
