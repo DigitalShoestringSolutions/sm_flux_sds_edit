@@ -1,29 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { InfluxDB, Point, HttpError } from "@influxdata/influxdb-client";
 import {DeleteAPI,  nanoTime } from '@influxdata/influxdb-client-apis'
-import { ResponsiveLine } from "@nivo/line";
 import 'bootstrap/dist/css/bootstrap.css';
-import ButtonGroup from 'react-bootstrap/ButtonGroup'
-import Dropdown from 'react-bootstrap/Dropdown';
-import DropdownButton from 'react-bootstrap/DropdownButton';
-import Pagination from 'react-bootstrap/Pagination'
-import Table from 'react-bootstrap/Table'
-import Carousel from 'react-bootstrap/Carousel'
-import OverlayTrigger from 'react-bootstrap/OverlayTrigger'
-import Tooltip from 'react-bootstrap/Tooltip'
 import Modal from 'react-bootstrap/Modal'
 import Button from 'react-bootstrap/Button'
-import Spinner from 'react-bootstrap/Spinner'
 import Card from 'react-bootstrap/Card'
-import Col from 'react-bootstrap/Col'
-import Row from 'react-bootstrap/Row'
-import Container from 'react-bootstrap/Container'
-import { MQTTProvider, useMQTTControl, useMQTTDispatch, useMQTTState } from './MQTTContext'
-import APIBackend from './RestAPI'
 import './app.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
-import { custom_new_message_action, CustomReducer } from './custom_mqtt';
-import { Alert, Badge, Form, InputGroup } from 'react-bootstrap';
+import {Form, InputGroup } from 'react-bootstrap';
 import DatePicker from "react-datepicker";
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -37,43 +21,20 @@ function App() {
   let [endDate, setEndDate] = React.useState(new Date())
   let [query, setQuery] = React.useState("")
   let [results, setResults] = React.useState([])
-
+  let [showConfirmDelete, setShowConfirmDelete] = React.useState(false)
   let [modResults, setModResults] = React.useState([{}])
   let [newDate, setNewDate] = React.useState(new Date())
   let [newVal, setNewVal] = React.useState("")
   let [index, setIndex] = React.useState(0)
-
   let [resumbit, setResubmit] = React.useState(false)
-
   const displayExludeKeys = ['_start', '_stop', 'table', 'result']
   const influxDB = new InfluxDB({url, token})
-
-
-
   const [show, setShow] = useState(false);
-  const handleClose = () => setShow(false);
-  const handleShow = (index) => {
-    setNewDate(new Date(results[index]['_time']))
-    setNewVal(results[index]['_value'])
-    setIndex(index);
-    setShow(true);
-  };
 
-  const saveChanges = () => {
-    updateResult(index, '_time', newDate.toISOString())
-    updateResult(index, '_value', newVal)
-    handleClose()
-    onModify(index)
-  }
-
-  
-  React.useEffect(() => {
-    console.log("resultsstate", results);
-  }, [results]);
 
   React.useEffect(() => {
-    console.log("*** Refresh Query ***");
     if (resumbit){
+      console.log("*** REFRESH QUERY ***");
       onQuerySubmit()
       setResubmit(false)
     }
@@ -83,14 +44,9 @@ function App() {
   const onQuerySubmit = () => {
 
     console.log('*** SUBMIT QUERY ***')
-
-
     let startString = startDate.toISOString()
     let endString = endDate.toISOString()
-    
     let query = `from(bucket: "${bucket}") |> range(start: ${startString}, stop: ${endString})`
-    console.log("query: ", query)
-
     let res = [];
     const influxQuery = async () => {
       const queryApi = await new InfluxDB({ url, token }).getQueryApi(org);
@@ -111,8 +67,6 @@ function App() {
     influxQuery();
   }
 
-
-
   async function deletePoint(timestamp,value) {
 
     console.log('*** DELETE DATA ***')
@@ -121,14 +75,8 @@ function App() {
     const exactTimeMs = new Date(timestamp).getTime() 
     const start = new Date(exactTimeMs-10) 
     const stop = new Date(exactTimeMs+10) 
-    
+  
 
-    console.log('start: ', start)
-    console.log('stop: ', stop)
-    console.log('value: ', value)
-    console.log('value type: ', typeof value)
-
-    // _value is not permitted in predicate
     
     await deleteAPI.postDelete({
       org,
@@ -136,18 +84,20 @@ function App() {
       body: {
         start: start.toISOString(),
         stop: stop.toISOString(),
-        // see https://docs.influxdata.com/influxdb/latest/reference/syntax/delete-predicate/
-        predicate: 'machine_name="'+value+'"',
+        predicate: 'machine_name="'+value+'"',         // _value is not permitted in predicate
       },
     })
 
     setResubmit(true)
     handleClose()
-    console.log('*** FINISHED DELETE ***')
 
 
   }
 
+  function isDateUnchanged(date) {
+    const defaultDate = new Date(results[index]['_time']);
+    return date.getTime() === defaultDate.getTime();
+   }
 
   const onAutoFill = () => {
     setToken("l3Z9k31lKzZ-Ixupk_s3FjinRas-HHbvf7tsBTpEUCP7m5YQL0Z0jF1yjQEC_ZNYLEr6xkSZfuXMUP_spHe9cg==")
@@ -156,34 +106,62 @@ function App() {
     setUrl("http://localhost:8086")
   }
 
+  const handleClose = () =>{
+    setShowConfirmDelete(false)
+    setShow(false);
+    setNewDate(new Date())
+    setNewVal("")
+  }
+  const handleShow = (index) => {
+    setNewDate(new Date(results[index]['_time']))
+    setNewVal(results[index]['_value'])
+    setIndex(index);
+    setShow(true);
+  };
 
-  const onDelete = () => {
-    
-    console.log("delete pressed")
-
-    console.log("results: ", results[index])
-    
-    deletePoint(results[index]['_time'], results[index]['machine_name'])  // Should find a way to make solution agnostic
-      .then(() => console.log('\nFinished SUCCESS'))
+  const saveChanges = () => {
+    let changes = false
+    if (!isDateUnchanged(newDate)) {
+      console.log("date changed, deleting old point")
+      deletePoint(results[index]['_time'], results[index]['machine_name']) 
+      .then(() => console.log('\nFinished Deleting'))
       .catch((error) => {
         console.error(error)
-        console.log('\nFinished ERROR')
-  })
+        console.log('\nDeleting ERROR')
+      })
+      updateResult(index, '_time', newDate.toISOString());
+      changes = true
+     }    
+    if (newVal != "") {
+      console.log("value changed, updating point")
+      updateResult(index, '_value', newVal);
+      changes = true
+     }    
+    handleClose()
+    
+    if (changes){onModify(index);} 
+  }
 
+  const handleShowConfirm = () => {
+    setShowConfirmDelete(true)
+  }
+  const handleCloseConfirm = () => {
+    setShowConfirmDelete(false)
+  }
+
+  const onDelete = () => {
+    console.log("Delete Pressed")
+    deletePoint(results[index]['_time'], results[index]['machine_name'])  // Should find a way to make solution agnostic
+      .then(() => console.log('\nFinished Deleting'))
+      .catch((error) => {
+        console.error(error)
+        console.log('\nDeleting ERROR')
+    })
   }
 
   const onModify = (index) => {
   /// when modify pressed, use the key to select the right value from the results array and send to API
-    console.log("modify pressed")
-    console.log("results: ", results[index])
-
-
     console.log('*** WRITE POINTS ***')
-    console.log('url: ', url)
-    console.log('token: ', token)
-    console.log('org: ', org)
-    console.log('bucket: ', bucket)
-
 
     const writeApi = influxDB.getWriteApi(org, bucket, 'ms')
 
@@ -194,9 +172,7 @@ function App() {
     let point = new Point(result['_measurement'])
     point.stringField(result['_field'], result['_value'])
 
-    for (const [key, value] of Object.entries(result)) {
-      console.log(`${key}: ${value}`, typeof value);
-      
+    for (const [key, value] of Object.entries(result)) {      
       if (key == "_field" || key == "_measurement" || key == "_start" || key == "_stop" || key == "_value" || key == "result" || key == "table"){
         continue
       }
@@ -205,31 +181,28 @@ function App() {
       }
       else if (typeof value === 'string') {
         point.tag(key, value)
-        console.log("string", value)
       }
     }
-    console.log("point: ", point)
     writeApi.writePoint(point) 
 
     writeApi
       .close()
       .then(() => {
-        console.log('FINISHED')
+        console.log('FINISHED WRITING POINTS')
       })
       .catch(e => {
         console.error(e)
-        console.log('\\nFinished ERROR')
+        console.log('\\WRITING ERROR')
       })
+    setResubmit(true)
   }
 
   const updateResult = (index, key, value) => {
-    console.log("value: ", value)
-    console.log("results[index][key]: ", results[index][key])
+    console.log("updating result", index, key, value)
     const newResults = [...results];
     newResults[index][key] = value;
     setResults(newResults);
   }
-
 
   return (
     <div>
@@ -290,80 +263,38 @@ function App() {
               dateFormat="MMMM d, yyyy h:mmaa"
             />
           </div>
-
-          
-          
           <Button className='float-end' onClick={onQuerySubmit}>Submit</Button>
           <Button className='float-end' onClick={onAutoFill}>Autofill</Button>
-
-
-
-
         </Form>
       </Card.Body>
     </Card>
     <Card className='my-2'>
       <Card.Header><h4> Query Results: </h4></Card.Header>
         <Card.Body>
-        
-        {/* <p>{JSON.stringify(results)}</p> */}
-        <p> Showing {results.length} result{results.length==1 ? '': "s"} </p>
-
-
-        <InputGroup className="mb-3">
-          
-        {results[0] ? <InputGroup.Text style={{ width: "5em", background:"DarkGrey", color:"White" }}><i className='bi me-1' />Index</InputGroup.Text> : null}
-
-          {results[0] ? Object.keys(results[0]).map((key, _) => (
-            !displayExludeKeys.includes(key) ? 
-            <InputGroup.Text style={{ width: "10em",background:"DarkGrey", color:"White"  }}><i className='bi me-1' />{key}</InputGroup.Text> : null
-          ))
-          : null}
-       </InputGroup>
-
-        
-        {results.map((item, index) => (
-          <div>
-            <InputGroup className="mb-3">
-            <InputGroup.Text style={{ width: "5em" }}><i className='bi me-1' />{index}</InputGroup.Text>
-            {Object.keys(item).map((key, _) => (
+          <p> Showing {results.length} result{results.length==1 ? '': "s"} </p>
+          <InputGroup className="mb-3">
+            {results[0] ? <InputGroup.Text style={{ width: "5em", background:"DarkGrey", color:"White" }}><i className='bi me-1' />Index</InputGroup.Text> : null}
+            {results[0] ? Object.keys(results[0]).map((key, _) => (
               !displayExludeKeys.includes(key) ? 
-              <InputGroup.Text style={{ width: "10em" }}><i className='bi me-1' />{item[key]}</InputGroup.Text>
-              : null
-            ))}
-            
-            <Button  variant="outline-secondary" id="button-addon1" onClick={() => handleShow(index)}>Modify</Button>
-
-          </InputGroup>
+              <InputGroup.Text style={{ width: "10em",background:"DarkGrey", color:"White"  }}><i className='bi me-1' />{key}</InputGroup.Text> : null
+            ))
+            : null}
+        </InputGroup>
           
-
-          </div>
-        ))
-        }
-        {/* {results.map((item, index) => (
-          <div>
-            <InputGroup className="mb-3">
-            {Object.keys(item).map((key, _) => (
-              
-              <Form.Control
-                placeholder={item[key]}
-                onChange={(event) => updateResult(index, key, event.target.value)}
-
-              />
-            ))}
-            
-          <Button  variant="outline-secondary" id="button-addon1" onClick={() => onModify(index)}>Modify</Button>
-
-          </InputGroup>
-          
-
-          </div>
-        ))
-        } */}
-        
-
-  
-
+          {results.map((item, index) => (
+            <div>
+              <InputGroup className="mb-3">
+                <InputGroup.Text style={{ width: "5em" }}><i className='bi me-1' />{index}</InputGroup.Text>
+                {Object.keys(item).map((key, _) => (
+                  !displayExludeKeys.includes(key) ? 
+                  <InputGroup.Text style={{ width: "10em" }}><i className='bi me-1' />{item[key]}</InputGroup.Text>
+                  : null
+                ))}
+                <Button  variant="outline-secondary" id="button-addon1" onClick={() => handleShow(index)}>Modify</Button>
+              </InputGroup>
+            </div>
+          ))
+          }
         </Card.Body>
     </Card>
     <Modal show={show} onHide={handleClose}>
@@ -388,20 +319,38 @@ function App() {
               onChange={newDate => setNewDate(newDate)}
               dateFormat="MMMM d, yyyy h:mmaa"
             />
-          
-          
 
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={handleClose}>
             Close
           </Button>
-          <Button variant="danger" onClick={onDelete}>
+          <Button variant="danger" onClick={handleShowConfirm}>
             Delete
           </Button>
           <Button variant="primary" onClick={saveChanges}>
             Save Changes
           </Button>
+        </Modal.Footer>
+      </Modal>
+
+
+      <Modal show={showConfirmDelete} onHide={handleClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>Are you sure?</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>Are you sure you want to delete this item?</p>
+          <p>This action cannot be undone.</p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseConfirm}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={onDelete}>
+            Delete Forever
+          </Button>
+          
         </Modal.Footer>
       </Modal>
   </div>
