@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { InfluxDB, Point, HttpError } from "@influxdata/influxdb-client";
+import {DeleteAPI,  nanoTime } from '@influxdata/influxdb-client-apis'
 import { ResponsiveLine } from "@nivo/line";
 import 'bootstrap/dist/css/bootstrap.css';
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
@@ -42,6 +43,11 @@ function App() {
   let [newVal, setNewVal] = React.useState("")
   let [index, setIndex] = React.useState(0)
 
+  let [resumbit, setResubmit] = React.useState(false)
+
+  const displayExludeKeys = ['_start', '_stop', 'table', 'result']
+  const influxDB = new InfluxDB({url, token})
+
 
 
   const [show, setShow] = useState(false);
@@ -65,18 +71,23 @@ function App() {
     console.log("resultsstate", results);
   }, [results]);
 
+  React.useEffect(() => {
+    console.log("*** Refresh Query ***");
+    if (resumbit){
+      onQuerySubmit()
+      setResubmit(false)
+    }
+  }, [resumbit]);
 
-  const onSubmit = () => {
+
+  const onQuerySubmit = () => {
+
+    console.log('*** SUBMIT QUERY ***')
+
 
     let startString = startDate.toISOString()
     let endString = endDate.toISOString()
-    console.log("token: ", token)
-    console.log("org: ", org)
-    console.log("bucket: ", bucket)
-    console.log("url: ", url)
-    console.log("start: ", startString)
-    console.log("stop: ", endString)
-
+    
     let query = `from(bucket: "${bucket}") |> range(start: ${startString}, stop: ${endString})`
     console.log("query: ", query)
 
@@ -90,7 +101,6 @@ function App() {
         },
         complete() {
           console.log("Query Results (API)", res)
-          console.log("Query Results (API)", res[0])
           setResults(res)
         },
         error(error) {
@@ -98,8 +108,44 @@ function App() {
         }
       });
     };
-    // THIS IS CAUSING SOME ISSUES WITH INFLUX DB BUT RETURNING THE DATA CORRECTLY
     influxQuery();
+  }
+
+
+
+  async function deletePoint(timestamp,value) {
+
+    console.log('*** DELETE DATA ***')
+
+    const deleteAPI = new DeleteAPI(influxDB)
+    const exactTimeMs = new Date(timestamp).getTime() 
+    const start = new Date(exactTimeMs-10) 
+    const stop = new Date(exactTimeMs+10) 
+    
+
+    console.log('start: ', start)
+    console.log('stop: ', stop)
+    console.log('value: ', value)
+    console.log('value type: ', typeof value)
+
+    // _value is not permitted in predicate
+    
+    await deleteAPI.postDelete({
+      org,
+      bucket,
+      body: {
+        start: start.toISOString(),
+        stop: stop.toISOString(),
+        // see https://docs.influxdata.com/influxdb/latest/reference/syntax/delete-predicate/
+        predicate: 'machine_name="'+value+'"',
+      },
+    })
+
+    setResubmit(true)
+    handleClose()
+    console.log('*** FINISHED DELETE ***')
+
+
   }
 
 
@@ -108,6 +154,22 @@ function App() {
     setOrg("SHOESTRING")
     setBucket("stoppage_monitoring")
     setUrl("http://localhost:8086")
+  }
+
+
+  const onDelete = () => {
+    
+    console.log("delete pressed")
+
+    console.log("results: ", results[index])
+    
+    deletePoint(results[index]['_time'], results[index]['machine_name'])  // Should find a way to make solution agnostic
+      .then(() => console.log('\nFinished SUCCESS'))
+      .catch((error) => {
+        console.error(error)
+        console.log('\nFinished ERROR')
+  })
+
   }
 
   const onModify = (index) => {
@@ -122,7 +184,8 @@ function App() {
     console.log('org: ', org)
     console.log('bucket: ', bucket)
 
-    const writeApi = new InfluxDB({url, token}).getWriteApi(org, bucket, 'ms')
+
+    const writeApi = influxDB.getWriteApi(org, bucket, 'ms')
 
     // Delete items if time has changed
     // Add headings
@@ -146,8 +209,8 @@ function App() {
       }
     }
     console.log("point: ", point)
-    writeApi.writePoint(point) // THIS DOES NOT SEEM TO BE WORKING
-    
+    writeApi.writePoint(point) 
+
     writeApi
       .close()
       .then(() => {
@@ -171,7 +234,7 @@ function App() {
   return (
     <div>
       <Card className='my-2'>
-      <Card.Header><h4> Database Details: </h4></Card.Header>
+      <Card.Header><h4> Database Details Test: </h4></Card.Header>
       <Card.Body>
         <Form noValidate validated={true}>
           <InputGroup className="mb-3">
@@ -230,7 +293,7 @@ function App() {
 
           
           
-          <Button className='float-end' onClick={onSubmit}>Submit</Button>
+          <Button className='float-end' onClick={onQuerySubmit}>Submit</Button>
           <Button className='float-end' onClick={onAutoFill}>Autofill</Button>
 
 
@@ -245,12 +308,26 @@ function App() {
         
         {/* <p>{JSON.stringify(results)}</p> */}
         <p> Showing {results.length} result{results.length==1 ? '': "s"} </p>
+
+
+        <InputGroup className="mb-3">
+          
+        {results[0] ? <InputGroup.Text style={{ width: "5em", background:"DarkGrey", color:"White" }}><i className='bi me-1' />Index</InputGroup.Text> : null}
+
+          {results[0] ? Object.keys(results[0]).map((key, _) => (
+            !displayExludeKeys.includes(key) ? 
+            <InputGroup.Text style={{ width: "10em",background:"DarkGrey", color:"White"  }}><i className='bi me-1' />{key}</InputGroup.Text> : null
+          ))
+          : null}
+       </InputGroup>
+
+        
         {results.map((item, index) => (
           <div>
             <InputGroup className="mb-3">
             <InputGroup.Text style={{ width: "5em" }}><i className='bi me-1' />{index}</InputGroup.Text>
             {Object.keys(item).map((key, _) => (
-              key !== '_start' && key !== '_stop' ? 
+              !displayExludeKeys.includes(key) ? 
               <InputGroup.Text style={{ width: "10em" }}><i className='bi me-1' />{item[key]}</InputGroup.Text>
               : null
             ))}
@@ -319,7 +396,7 @@ function App() {
           <Button variant="secondary" onClick={handleClose}>
             Close
           </Button>
-          <Button variant="danger" onClick={handleClose}>
+          <Button variant="danger" onClick={onDelete}>
             Delete
           </Button>
           <Button variant="primary" onClick={saveChanges}>
