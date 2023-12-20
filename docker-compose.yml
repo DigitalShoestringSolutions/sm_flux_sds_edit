@@ -1,0 +1,17 @@
+version: '2'
+
+services:
+    sds_edit:
+        extends:
+            file: sds_edit/app.yml
+            service: app
+        networks:
+            internal: 
+                aliases: 
+                    - sds-edit.docker.local
+        logging: 
+            driver: syslog
+            options: 
+                tag: docker-sds-edit
+networks:
+    internal:
