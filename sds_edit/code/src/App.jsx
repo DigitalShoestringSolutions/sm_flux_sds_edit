@@ -100,7 +100,7 @@ function App() {
    }
 
   const onAutoFill = () => {
-    setToken("l3Z9k31lKzZ-Ixupk_s3FjinRas-HHbvf7tsBTpEUCP7m5YQL0Z0jF1yjQEC_ZNYLEr6xkSZfuXMUP_spHe9cg==")
+    setToken("")
     setOrg("SHOESTRING")
     setBucket("stoppage_monitoring")
     setUrl("http://localhost:8086")
